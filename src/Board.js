@@ -7,20 +7,64 @@ import './Board.css';
 export default class Board extends React.Component {
   constructor(props) {
     super(props);
-    const clients = this.getClients();
+    // Ticket: all tasks start in the backlog swimlane
+    const clients = this.getClients().map(client => ({ ...client, status: 'backlog' }));
     this.state = {
       clients: {
-        backlog: clients.filter(client => !client.status || client.status === 'backlog'),
-        inProgress: clients.filter(client => client.status && client.status === 'in-progress'),
-        complete: clients.filter(client => client.status && client.status === 'complete'),
+        backlog: clients,
+        inProgress: [],
+        complete: [],
       }
-    }
+    };
     this.swimlanes = {
       backlog: React.createRef(),
       inProgress: React.createRef(),
       complete: React.createRef(),
+    };
+  }
+
+  componentDidMount() {
+    this.drake = Dragula([
+      this.swimlanes.backlog.current,
+      this.swimlanes.inProgress.current,
+      this.swimlanes.complete.current,
+    ]);
+
+    this.drake.on('drop', () => {
+      // Lookup of every client by id, from current state
+      const all = [
+        ...this.state.clients.backlog,
+        ...this.state.clients.inProgress,
+        ...this.state.clients.complete,
+      ];
+      const byId = {};
+      all.forEach(client => { byId[client.id] = client; });
+
+      // Read the new order/lanes from the DOM, tagging each card with its lane's status
+      const readLane = (ref, status) =>
+        Array.from(ref.current.children).map(el => ({
+          ...byId[el.getAttribute('data-id')],
+          status,
+        }));
+
+      const next = {
+        backlog: readLane(this.swimlanes.backlog, 'backlog'),
+        inProgress: readLane(this.swimlanes.inProgress, 'in-progress'),
+        complete: readLane(this.swimlanes.complete, 'complete'),
+      };
+
+      // Undo Dragula's DOM move so React fully controls the DOM, then update state
+      this.drake.cancel(true);
+      this.setState({ clients: next });
+    });
+  }
+
+  componentWillUnmount() {
+    if (this.drake) {
+      this.drake.destroy();
     }
   }
+
   getClients() {
     return [
       ['1','Stark, White and Abbott','Cloned Optimal Architecture', 'in-progress'],
@@ -50,6 +94,7 @@ export default class Board extends React.Component {
       status: companyDetails[3],
     }));
   }
+
   renderSwimlane(name, clients, ref) {
     return (
       <Swimlane name={name} clients={clients} dragulaRef={ref}/>
